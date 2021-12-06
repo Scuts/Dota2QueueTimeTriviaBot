@@ -1,2 +1,2 @@
-# Dota2QueueTimeTriviaBot
- DOTA 2 QUEUE TIME TRIVIA
+# DotaQueueTimeTriviaBot
+ Discord.js queue time trivia bot
