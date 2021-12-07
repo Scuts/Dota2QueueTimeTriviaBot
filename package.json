@@ -7,7 +7,8 @@
         "test": "echo \"Error: no test specified\" && exit 1",
         "build": "tsc",
         "start": "tsc && node --experimental-json-modules dist/index.js",
-        "deploy-commands": "tsc && node --experimental-json-modules dist/deploy-commands.js"
+        "deploy-commands": "tsc && node --experimental-json-modules dist/deploy-commands.js",
+        "update-heroes": "tsc && node --experimental-json-modules dist/update-heroes.js"
     },
     "type": "module",
     "keywords": [],

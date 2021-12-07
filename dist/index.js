@@ -91,6 +91,9 @@ function parseText(response) {
 function addAccount(interaction) {
     const interactionData = interaction.options.data;
     let steamId;
+    if (!interaction.guildId) {
+        return `Could not find guild Id`;
+    }
     if (interactionData && interactionData.length > 0) {
         steamId = interactionData.find(x => x.name === 'account_id')?.value;
     }
@@ -100,7 +103,7 @@ function addAccount(interaction) {
     if (!steamId) {
         return `Could not find steamId in message.`;
     }
-    removeAccountPromise(steamId).then(() => { fetchNewOpenDotaAccount(steamId); });
+    removeAccountPromise(steamId).then(() => { fetchNewOpenDotaAccount(steamId, interaction.guildId); });
     /*const uri = config.uri;
     const mongoClient = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
     mongoClient.connect(err => {
@@ -130,17 +133,31 @@ function removeAccount(interaction) {
     removeAccountPromise(steamId);
     return `Removing account info for: ${steamId}`;
 }
-function fetchNewOpenDotaAccount(steamId) {
+function fetchNewOpenDotaAccount(steamId, guildId) {
     let playerUrl = `https://api.opendota.com/api/players/${steamId}`;
     fetch(playerUrl)
         .then(res => res.text())
-        .then(text => savePlayer(text, steamId));
+        .then(text => savePlayer(text, steamId, guildId));
     let heroUrl = `https://api.opendota.com/api/players/${steamId}/heroes`;
     fetch(heroUrl)
         .then(res => res.text())
         .then(text => savePlayerHeroes(text, steamId));
+    const query = { guildId: guildId };
+    const update = {
+        $set: { guildId: guildId },
+        $addToSet: { accounts: steamId }
+    };
+    const options = { upsert: true };
+    const uri = config.uri;
+    const mongoClient = new MongoClient(uri);
+    mongoClient.connect(err => {
+        const collection = mongoClient.db("qttDB").collection("guild");
+        collection.updateOne(query, update, options).then(x => {
+            mongoClient.close();
+        });
+    });
 }
-function savePlayer(text, steamId) {
+function savePlayer(text, steamId, guildId) {
     console.log(text);
     let jsonResults = JSON.parse(text);
     const uri = config.uri;
@@ -157,7 +174,7 @@ function savePlayerHeroes(text, steamId) {
     let jsonResults = JSON.parse(text);
     jsonResults.forEach(element => {
         element.account_id = steamId;
-        element.heroId = parseInt(element.hero_id);
+        element.hero_id = parseInt(element.hero_id);
     });
     const uri = config.uri;
     const mongoClient = new MongoClient(uri);
@@ -170,9 +187,12 @@ function savePlayerHeroes(text, steamId) {
 }
 function newQuestion(interaction) {
     const questions = [questionMostPlayedHero, questionLeastPlayedHero, questionBestWinrateAgainst, questionWorstWinrateAgainst];
+    if (!interaction.guildId) {
+        return `Could not find guild Id`;
+    }
     let question = questions[Math.floor(Math.random() * questions.length)];
     new Promise(function (resolve, reject) {
-        question(resolve, reject);
+        question(interaction.guildId, resolve, reject);
     }).then(async (resultUntyped) => {
         //TODO: Figure out if there's a way to not have to cast this. Can I be aware of this?
         let result = resultUntyped;
@@ -206,7 +226,7 @@ function newQuestion(interaction) {
         }
     });
 }
-function questionMostPlayedHero(resolve, reject) {
+function questionMostPlayedHero(guildId, resolve, reject) {
     const uri = config.uri;
     const client = new MongoClient(uri);
     let response = {
@@ -253,7 +273,7 @@ function questionMostPlayedHero(resolve, reject) {
         });
     });
 }
-function questionLeastPlayedHero(resolve, reject) {
+function questionLeastPlayedHero(guildId, resolve, reject) {
     const uri = config.uri;
     const client = new MongoClient(uri);
     let response = {
@@ -300,7 +320,7 @@ function questionLeastPlayedHero(resolve, reject) {
         });
     });
 }
-function questionWorstWinrateAgainst(resolve, reject) {
+function questionWorstWinrateAgainst(guildId, resolve, reject) {
     const uri = config.uri;
     const client = new MongoClient(uri);
     let response = {
@@ -349,7 +369,7 @@ function questionWorstWinrateAgainst(resolve, reject) {
         });
     });
 }
-function questionBestWinrateAgainst(resolve, reject) {
+function questionBestWinrateAgainst(guildId, resolve, reject) {
     const uri = config.uri;
     const client = new MongoClient(uri);
     let response = {

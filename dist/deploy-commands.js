@@ -17,7 +17,10 @@ const commands = [
         .setRequired(true)),
     new SlashCommandBuilder()
         .setName('new_question')
-        .setDescription('Get a new multiple choice question about your stack.')
+        .setDescription('Get a new multiple choice question about your stack.'),
+    new SlashCommandBuilder()
+        .setName('refresh_accounts')
+        .setDescription('Refresh data in the dota accounts in your stack.')
 ]
     .map(command => command.toJSON());
 const rest = new REST({ version: '9' }).setToken(config.token);
