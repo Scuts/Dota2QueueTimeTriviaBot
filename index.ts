@@ -137,7 +137,7 @@ function addAccount(interaction:CommandInteraction) {
     if(!steamId) {
         return `Could not find steamId in message.`;
     }
-    removeAccountPromise(steamId).then(() => {fetchNewOpenDotaAccount(steamId, interaction.guildId as string)});
+    fetchOpenDotaAccount(steamId, interaction.guildId as string);
     
     /*const uri = config.uri;
     const mongoClient = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
@@ -158,7 +158,7 @@ function removeAccountPromise (steamId:number): Promise<String> {
         mongoClient.connect(err => {
             const collection = mongoClient.db("qttDB").collection("player");
             collection.deleteMany({ account_id: steamId}).then(results => {
-                const playerHeroCollection = mongoClient.db("qttDB").collection("player_hero");
+                const playerHeroCollection = mongoClient.db("qttDB").collection("guild");
                 playerHeroCollection.deleteMany({account_id: steamId}).then(() => {resolve("done")});
             });
         });
@@ -168,71 +168,81 @@ function removeAccountPromise (steamId:number): Promise<String> {
 function removeAccount(interaction:CommandInteraction) {
     const interactionData:Readonly<Array<CommandInteractionOption>> = interaction.options.data;
 	const steamId:number = interactionData.find(x => x.name === 'account_id')?.value as number;
-    removeAccountPromise(steamId);
+    if(!interaction.guildId) {
+        return `Could not find guild Id`;
+    }
+    const uri = config.uri;
+    const mongoClient = new MongoClient(uri);
+    mongoClient.connect(err => {
+        const guildCollection = mongoClient.db("qttDB").collection("guild");
+        const query = { guildId: interaction.guildId};
+        const update = {
+            $pull: {accounts: {"profile.account_id": steamId }}
+        };
+        guildCollection.updateOne(query , update).then(x=> {mongoClient.close()})
+    });
 
     return `Removing account info for: ${steamId}`;
 }
 
-function fetchNewOpenDotaAccount(steamId:number, guildId:string) {
+function fetchOpenDotaAccount(steamId:number, guildId:string) {
     let playerUrl = `https://api.opendota.com/api/players/${steamId}`;
-    fetch(playerUrl)
-        .then(res => res.text())
-        .then(text => savePlayer(text, steamId, guildId));
-
     let heroUrl = `https://api.opendota.com/api/players/${steamId}/heroes`;
 
-    fetch(heroUrl)
+    fetch(playerUrl)
         .then(res => res.text())
-        .then(text => savePlayerHeroes(text, steamId));
-
-    const query = { guildId: guildId };
-    const update =  {    
-                        $set: { guildId: guildId },
-                        $addToSet: {accounts: steamId}
-                    };
-    const options = { upsert: true };
-
-    const uri = config.uri;
-    const mongoClient = new MongoClient(uri);
-    mongoClient.connect(err => {
-    const collection = mongoClient.db("qttDB").collection("guild");
-    collection.updateOne(query, update, options).then(x =>  {
-        mongoClient.close();
-    });
-    });
+        .then(text => {
+            fetch(heroUrl).
+            then(heroRes => heroRes.text())
+            .then(heroText => {
+                savePlayer(text, heroText, steamId, guildId)
+            })
+        });;
 }
 
-function savePlayer(text:string, steamId:number, guildId:string) {
+function savePlayer(text:string, heroText:string, steamId:number, guildId:string) {
     console.log(text);
     let jsonResults = JSON.parse(text);
     const uri = config.uri;
     const mongoClient = new MongoClient(uri);
-    mongoClient.connect(err => {
-    const collection = mongoClient.db("qttDB").collection("player");
-    collection.insertOne(
-        jsonResults.profile
-    ).then( items =>  {
-        mongoClient.close();
-    });
-    });
-}
 
-
-function savePlayerHeroes(text:string, steamId:number) {
-    console.log(text);
-    let jsonResults:Array<PlayerHero> = JSON.parse(text);
-    jsonResults.forEach(element => {
+    console.log(heroText);
+    let heroJsonResults:Array<PlayerHero> = JSON.parse(heroText);
+    heroJsonResults.forEach(element => {
         element.account_id = steamId;
         element.hero_id = parseInt(element.hero_id as string);
     });
-    const uri = config.uri;
-    const mongoClient = new MongoClient(uri);
+    jsonResults.heroes = heroJsonResults;
+
+
+    const query = { guildId: guildId};
+    const update =  {    
+                        $set: { guildId: guildId },
+                        //$addToSet: {accounts: jsonResults}
+                        $setOnInsert: {accounts: []}
+                    };
+    const options = { upsert: true };
+
     mongoClient.connect(err => {
-    const collection = mongoClient.db("qttDB").collection("player_hero");
-    collection.insertMany(
-        jsonResults
-    ).then( items =>  {
-        mongoClient.close();
+    const collection = mongoClient.db("qttDB").collection("guild");
+    collection.updateOne(query, update, options).then(x =>  {
+        let insertAccountQuery = {
+            guildId: guildId, "accounts.profile.account_id": { $ne: steamId} 
+        };
+        let insertAccountUpdate = {
+            $push: {accounts: jsonResults}
+        };
+        collection.updateOne(insertAccountQuery, insertAccountUpdate).then(x => {
+            let updateAccountQuery = {
+                guildId: guildId, "accounts.profile.account_id": steamId 
+            };
+            let updateAccountUpdate = {
+                $set: {"accounts.$": jsonResults}
+            };
+            collection.updateOne(updateAccountQuery, updateAccountUpdate).then(x => {
+                mongoClient.close();
+            })
+        })
     });
     });
 }
@@ -279,6 +289,28 @@ function newQuestion(interaction:CommandInteraction) {
         }		
     });
 } 
+
+function refreshAccounts(interaction:CommandInteraction) {
+    const uri = config.uri;
+    const client = new MongoClient(uri);
+
+    client.connect(err => {
+        const collection = client.db("qttDB").collection("guild");
+        collection.find({guildId: interaction.guildId})
+        .project({accountIds : '$accounts.profile.account_id'})
+        .toArray(function(err, result) {
+            client.close();
+            result?.forEach(result => {
+                console.log(result);
+                result?.accountIds.forEach((accountId: number) => {
+                    fetchOpenDotaAccount(accountId, interaction.guildId as string);
+                })
+            });
+        })
+    });
+
+    return 'Refreshing accounts for your guild.';
+}
 
 function questionMostPlayedHero(guildId:string, resolve: (arg0: Question) => void, reject: any) {
         
@@ -564,6 +596,9 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply(response);
     } else if (commandName === 'new_question') {
         newQuestion(interaction);
+    } else if (commandName === 'refresh_accounts') {
+        let response = refreshAccounts(interaction);
+        await interaction.reply(response);
     }
 });
 
