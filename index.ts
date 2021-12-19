@@ -249,7 +249,12 @@ function savePlayer(text:string, heroText:string, steamId:number, guildId:string
 
 function newQuestion(interaction:CommandInteraction) {
 
-    const questions = [questionMostPlayedHero, questionLeastPlayedHero, questionBestWinrateAgainst, questionWorstWinrateAgainst];
+    const questions = [
+        questionMostPlayedHero,
+        questionLeastPlayedHero, 
+        questionBestWinrateAgainst,
+        questionWorstWinrateAgainst
+    ];
     if(!interaction.guildId) {
         return `Could not find guild Id`;
     }
@@ -326,12 +331,30 @@ function questionMostPlayedHero(guildId:string, resolve: (arg0: Question) => voi
 
 
     client.connect(err => {
-        const collection = client.db("qttDB").collection("player_hero");
+        const collection = client.db("qttDB").collection("guild");
         var mysort = { games: -1 };
         collection.aggregate([
+            {
+                $match:
+                {
+                   guildId : guildId
+                },
+            },
+            {
+                $unwind: '$accounts'
+            },
+            {
+                $unwind: '$accounts.heroes'
+            },
+            {
+                $project: 
+                    {
+                        heroId: '$accounts.heroes.hero_id', 
+                        games: '$accounts.heroes.games'}                   
+            },
             { $group: {
-                _id: "$hero_id",
-            games: {$sum: "$games"}
+                _id: '$heroId',
+            games: {$sum: '$games'}
             }},
             { $lookup:
             {
@@ -348,6 +371,7 @@ function questionMostPlayedHero(guildId:string, resolve: (arg0: Question) => voi
                 }
             }
             ]).limit(4).toArray(function(err, result) {
+                console.log(result);
                 if (err) throw err;
                 if (!result) throw "No result";
 
@@ -377,12 +401,30 @@ function questionLeastPlayedHero(guildId:string, resolve: (arg0: Question) => vo
     };
 
     client.connect(err => {
-        const collection = client.db("qttDB").collection("player_hero");
+        const collection = client.db("qttDB").collection("guild");
         var mysort = { games: -1 };
         collection.aggregate([
+            {
+                $match:
+                {
+                   guildId : guildId
+                },
+            },
+            {
+                $unwind: '$accounts'
+            },
+            {
+                $unwind: '$accounts.heroes'
+            },
+            {
+                $project: 
+                    {
+                        heroId: '$accounts.heroes.hero_id', 
+                        games: '$accounts.heroes.games'}                   
+            },
             { $group: {
-                _id: "$hero_id",
-            games: {$sum: "$games"}
+                _id: '$heroId',
+            games: {$sum: '$games'}
             }},
             { $lookup:
             {
@@ -429,14 +471,34 @@ function questionWorstWinrateAgainst(guildId:string, resolve: (arg0: Question) =
     };
 
     client.connect(err => {
-        const collection = client.db("qttDB").collection("player_hero");
-        var mysort = { games: -1 };
+        const collection = client.db("qttDB").collection("guild");
         collection.aggregate([
-            { $group: {
-                _id: "$hero_id",
-                games: {$sum: "$against_games"},
-                wins: {$sum: "$against_win"}
-            }},
+            {
+                $match:
+                {
+                   guildId : guildId
+                },
+            },
+            {
+                $unwind: '$accounts'
+            },
+            {
+                $unwind: '$accounts.heroes'
+            },
+            {
+                $project: 
+                    {
+                        heroId: '$accounts.heroes.hero_id', 
+                        games: '$accounts.heroes.against_games',
+                        wins: '$accounts.heroes.against_win'}                   
+            },
+            { 
+                $group: {
+                    _id: '$heroId',
+                    games: {$sum: '$games'},
+                    wins: {$sum: '$wins'}
+                }
+            },
             { $lookup:
             {
                 from: 'heroes',
@@ -444,6 +506,9 @@ function questionWorstWinrateAgainst(guildId:string, resolve: (arg0: Question) =
                 foreignField: 'id',
                 as: 'herodetails'
             }
+            },
+            {
+                $match : {games: {$gt: 0}}
             },
             { $project: { herodetails: 1, winRate: { $divide: [ "$wins", "$games" ] } } },
             {
@@ -481,14 +546,34 @@ function questionBestWinrateAgainst(guildId:string, resolve: (arg0: Question) =>
         choices: []
     };
     client.connect(err => {
-        const collection = client.db("qttDB").collection("player_hero");
-        var mysort = { games: 1 };
+        const collection = client.db("qttDB").collection("guild");
         collection.aggregate([
-            { $group: {
-                _id: "$hero_id",
-                games: {$sum: "$against_games"},
-                wins: {$sum: "$against_win"}
-            }},
+            {
+                $match:
+                {
+                   guildId : guildId
+                },
+            },
+            {
+                $unwind: '$accounts'
+            },
+            {
+                $unwind: '$accounts.heroes'
+            },
+            {
+                $project: 
+                    {
+                        heroId: '$accounts.heroes.hero_id', 
+                        games: '$accounts.heroes.against_games',
+                        wins: '$accounts.heroes.against_win'}                   
+            },
+            { 
+                $group: {
+                    _id: '$heroId',
+                    games: {$sum: '$games'},
+                    wins: {$sum: '$wins'}
+                }
+            },
             { $lookup:
             {
                 from: 'heroes',
@@ -496,6 +581,9 @@ function questionBestWinrateAgainst(guildId:string, resolve: (arg0: Question) =>
                 foreignField: 'id',
                 as: 'herodetails'
             }
+            },
+            {
+                $match : {games: {$gt: 0}}
             },
             { $project: { herodetails: 1, winRate: { $divide: [ "$wins", "$games" ] } } },
             {
